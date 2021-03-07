@@ -55,6 +55,81 @@ def after_action_state(state, action):
     return nboard, next_mark(mark)
 
 
+### GAME STATUS SECTION ###
+
+class MarkerCounter:
+    def __init__(self):
+        self.maker_count = 0
+        self.previous_marker = None
+    
+    def reset(self):
+        self.maker_count = 0
+        self.previous_marker = None
+    
+    def count(self, cell_val):
+        # marker_val: 0 (empty) or 1 or 2
+        if cell_val in [1,2] and (self.previous_marker == cell_val or self.previous_marker is None):
+            self.maker_count += 1
+            self.previous_marker = cell_val
+        else:
+            self.reset()
+            
+        if self.maker_count == 4:
+            return cell_val
+        else:
+            return None
+
+def check_non_diagonal_winner(board):
+    for row in board:
+        for cell in row:
+            gameover_flag = marker_counter.count(cell)
+            if gameover_flag in [1, 2]:
+                print(f'The winner is player: {gameover_flag}')
+                return gameover_flag
+            
+    for col in board.T:
+        for cell in col:
+            gameover_flag = marker_counter.count(cell)
+            if gameover_flag in [1, 2]:
+                print(f'The winner is player: {gameover_flag}')
+                return gameover_flag
+    return None
+        
+def check_diagonal_winner(board):
+    
+    down_right_startpos = [(2,0), (1,0), (0,0), (0,1), (0,2), (0,3)]    
+    for dr_start_pos in down_right_startpos:
+        marker_counter = MarkerCounter()
+        row_i, col_j = dr_start_pos
+        while row_i < NUM_ROWS and col_j < NUM_COLUMNS:
+            cell = board[row_i, col_j]
+            gameover_flag = marker_counter.count(cell)
+            #print(row_i, col_j, cell, gameover_flag)
+            if gameover_flag in [1, 2]:
+                print(f'The winner is player: {gameover_flag}')
+                return gameover_flag
+            row_i += 1
+            col_j += 1
+            
+    up_right_startpos = [(3,0), (4,0), (5,0), (5,1), (5,2), (5,3)]
+    for ur_start_pos in up_right_startpos:
+        marker_counter = MarkerCounter()
+        row_i, col_j = ur_start_pos
+        while -1 < row_i and col_j < NUM_COLUMNS:
+            cell = board[row_i, col_j]
+            gameover_flag = marker_counter.count(cell)
+            #print(row_i, col_j, cell, gameover_flag)
+            if gameover_flag in [1, 2]:
+                print(f'The winner is player: {gameover_flag}')
+                return gameover_flag
+            row_i -= 1
+            col_j += 1
+
+    return None
+    
+def check_game_draw(board):
+    return ~(board == 0).any()
+    
 def check_game_status(board):
     """Return game status by current board status.
     Args:
@@ -65,25 +140,20 @@ def check_game_status(board):
             0: draw game,
             1 or 2 for finished game(winner mark code).
     """
-    for t in [1, 2]:
-        for j in range(0, 9, 3):
-            if [t] * 3 == [board[i] for i in range(j, j+3)]:
-                return t
-        for j in range(0, 3):
-            if board[j] == t and board[j+3] == t and board[j+6] == t:
-                return t
-        if board[0] == t and board[4] == t and board[8] == t:
-            return t
-        if board[2] == t and board[4] == t and board[6] == t:
-            return t
-
-    for i in range(9):
-        if board[i] == 0:
-            # still playing
-            return -1
-
-    # draw game
-    return 0
+    
+    if check_game_draw(board):
+        return 0 # game draw
+        
+    gameover_flag = check_non_diagonal_winner(board)
+    if gameover_flag is None:
+        gameover_flag = check_diagonal_winner(board)
+    
+    if gameover_flag is not None:
+        return gameover_flag # winner is 1 or 2
+    else:
+        return -1 # game still ongoing
+    
+### GAME STATUS SECTION END ###
 
 
 class TicTacToeEnv(gym.Env):
@@ -221,9 +291,11 @@ def set_log_level_by(verbosity):
     return level
 
 ##############
-env = TicTacToeEnv()
-env.reset()
-env.render()
+
+if __name__ == '__main__':
+    env = TicTacToeEnv()
+    env.reset()
+    env.render()
 
 #for _ in range(1000):
 #   env.render()
