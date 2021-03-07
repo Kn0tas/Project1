@@ -80,7 +80,10 @@ class MarkerCounter:
             return None
 
 def check_non_diagonal_winner(board):
+    marker_counter = MarkerCounter()
+
     for row in board:
+        marker_counter.reset()
         for cell in row:
             gameover_flag = marker_counter.count(cell)
             if gameover_flag in [1, 2]:
@@ -88,6 +91,7 @@ def check_non_diagonal_winner(board):
                 return gameover_flag
             
     for col in board.T:
+        marker_counter.reset()
         for cell in col:
             gameover_flag = marker_counter.count(cell)
             if gameover_flag in [1, 2]:
@@ -96,10 +100,11 @@ def check_non_diagonal_winner(board):
     return None
         
 def check_diagonal_winner(board):
+    marker_counter = MarkerCounter()
     
     down_right_startpos = [(2,0), (1,0), (0,0), (0,1), (0,2), (0,3)]    
     for dr_start_pos in down_right_startpos:
-        marker_counter = MarkerCounter()
+        marker_counter.reset()
         row_i, col_j = dr_start_pos
         while row_i < NUM_ROWS and col_j < NUM_COLUMNS:
             cell = board[row_i, col_j]
@@ -113,7 +118,7 @@ def check_diagonal_winner(board):
             
     up_right_startpos = [(3,0), (4,0), (5,0), (5,1), (5,2), (5,3)]
     for ur_start_pos in up_right_startpos:
-        marker_counter = MarkerCounter()
+        marker_counter.reset()
         row_i, col_j = ur_start_pos
         while -1 < row_i and col_j < NUM_COLUMNS:
             cell = board[row_i, col_j]
@@ -197,7 +202,11 @@ class TicTacToeEnv(gym.Env):
 
         reward = NO_REWARD
         # place
-        self.board[loc] = tocode(self.mark)
+        col_vals = self.board[:, loc] # get the column
+        row_index = np.argwhere(col_vals == 0)[-1, -1] # get index of "bottom-most" empty cell
+        self.board[row_index, loc] = tocode(self.mark)
+
+        # check game status
         status = check_game_status(self.board)
         logging.debug("check_game_status board {} mark '{}'"
                       " status {}".format(self.board, self.mark, status))
@@ -212,7 +221,9 @@ class TicTacToeEnv(gym.Env):
         return self._get_obs(), reward, self.done, None
 
     def _get_obs(self):
-        return tuple(self.board), self.mark
+        # TODO: "unroll array to list!"
+        return self.board.flatten(), self.mark
+        #return tuple(self.board), self.mark
 
     def render(self, mode='human', close=False):
         if close:
