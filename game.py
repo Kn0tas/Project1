@@ -14,30 +14,24 @@ NO_REWARD = 0
 NUM_ROWS = 6
 NUM_COLUMNS = 7
 
-
 LEFT_PAD = '  '
 LOG_FMT = logging.Formatter('%(levelname)s '
                             '[%(filename)s:%(lineno)d] %(message)s',
                             '%Y-%m-%d %H:%M:%S')
 
-
 def tomark(code):
     return CODE_MARK_MAP[code]
-
 
 def tocode(mark):
     return 1 if mark == 'O' else 2
 
-
 def next_mark(mark):
     return 'X' if mark == 'O' else 'O'
-
 
 def agent_by_mark(agents, mark):
     for agent in agents:
         if agent.mark == mark:
             return agent
-
 
 def after_action_state(state, action):
     """Execute an action and returns resulted state.
@@ -54,7 +48,6 @@ def after_action_state(state, action):
     nboard = tuple(nboard)
     return nboard, next_mark(mark)
 
-
 ### GAME STATUS SECTION ###
 
 class MarkerCounter:
@@ -68,9 +61,10 @@ class MarkerCounter:
     
     def count(self, cell_val):
         # marker_val: 0 (empty) or 1 or 2
+        if self.previous_marker != cell_val:
+            self.reset()
         if cell_val in [1,2]:
-            if self.previous_marker != cell_val:
-                self.reset()
+
             self.maker_count += 1
             self.previous_marker = cell_val
             
@@ -123,7 +117,7 @@ def check_diagonal_winner(board):
         while -1 < row_i and col_j < NUM_COLUMNS:
             cell = board[row_i, col_j]
             gameover_flag = marker_counter.count(cell)
-            #print(row_i, col_j, cell, gameover_flag)
+            print(row_i, col_j, cell, gameover_flag)
             if gameover_flag in [1, 2]:
                 print(f'The winner is player: {gameover_flag}')
                 return gameover_flag
@@ -145,7 +139,9 @@ def check_game_status(board):
             0: draw game,
             1 or 2 for finished game(winner mark code).
     """
-    
+    if isinstance(board, tuple):
+        board = np.array(board).reshape(6, 7)[::-1, :]
+
     if check_game_draw(board):
         return 0 # game draw
         
@@ -222,8 +218,8 @@ class TicTacToeEnv(gym.Env):
 
     def _get_obs(self):
         # TODO: "unroll array to list!"
-        return self.board.flatten(), self.mark
-        #return tuple(self.board), self.mark
+        #return self.board.flatten(), self.mark
+        return tuple(self.board.flatten()), self.mark
 
     def render(self, mode='human', close=False):
         if close:
