@@ -103,7 +103,6 @@ def check_diagonal_winner(board):
         while row_i < NUM_ROWS and col_j < NUM_COLUMNS:
             cell = board[row_i, col_j]
             gameover_flag = marker_counter.count(cell)
-            #print(row_i, col_j, cell, gameover_flag)
             if gameover_flag in [1, 2]:
                 print(f'The winner is player: {gameover_flag}')
                 return gameover_flag
@@ -117,7 +116,6 @@ def check_diagonal_winner(board):
         while -1 < row_i and col_j < NUM_COLUMNS:
             cell = board[row_i, col_j]
             gameover_flag = marker_counter.count(cell)
-            print(row_i, col_j, cell, gameover_flag)
             if gameover_flag in [1, 2]:
                 print(f'The winner is player: {gameover_flag}')
                 return gameover_flag

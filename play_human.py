@@ -26,6 +26,19 @@ class HumanAgent(object):
 
         return action
 
+    def pygame_act(self, ava_actions, action):
+        try:
+            if action not in ava_actions:
+                action_is_valid = False
+                raise ValueError()
+            else:
+                action_is_valid = True
+        except ValueError:
+            action_is_valid = False
+            print("Illegal location: '{}'".format(action))
+
+        return action, action_is_valid
+
 
 @click.command(help="Play human agent.")
 @click.option('-n', '--show-number', is_flag=True, default=False,
