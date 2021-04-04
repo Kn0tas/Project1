@@ -1,5 +1,5 @@
 #In this file the bot opponent is defined.
-
+import random
 import logging
 import gym
 import numpy as np
@@ -7,10 +7,11 @@ import numpy as np
 from gym import spaces
 
 CODE_MARK_MAP = {0: ' ', -1: 'O', 1: 'X'}
-NUM_LOC = 9
-O_REWARD = 1
-X_REWARD = -1
-NO_REWARD = 0
+
+GAME_REWARD = 100
+ACTION_REWARD = -1 # penalize per each action to force winning more quickly
+TIE_REWARD = 0
+
 NUM_ROWS = 6
 NUM_COLUMNS = 7
 
@@ -23,7 +24,7 @@ def tomark(code):
     return CODE_MARK_MAP[code]
 
 def tocode(mark):
-    return 1 if mark == 'O' else 2
+    return 1 if mark == 'O' else -1
 
 def next_mark(mark):
     return 'X' if mark == 'O' else 'O'
@@ -63,7 +64,7 @@ class MarkerCounter:
         # marker_val: 0 (empty) or 1 or 2
         if self.previous_marker != cell_val:
             self.reset()
-        if cell_val in [1,2]:
+        if cell_val in [-1, 1]:
 
             self.maker_count += 1
             self.previous_marker = cell_val
@@ -80,7 +81,7 @@ def check_non_diagonal_winner(board):
         marker_counter.reset()
         for cell in row:
             gameover_flag = marker_counter.count(cell)
-            if gameover_flag in [1, 2]:
+            if gameover_flag in [-1, 1]:
                 print(f'The winner is player: {gameover_flag}')
                 return gameover_flag
             
@@ -88,7 +89,7 @@ def check_non_diagonal_winner(board):
         marker_counter.reset()
         for cell in col:
             gameover_flag = marker_counter.count(cell)
-            if gameover_flag in [1, 2]:
+            if gameover_flag in [-1, 1]:
                 print(f'The winner is player: {gameover_flag}')
                 return gameover_flag
     return None
@@ -148,16 +149,16 @@ def check_game_status(board):
         gameover_flag = check_diagonal_winner(board)
     
     if gameover_flag is not None:
-        return gameover_flag # winner is 1 or 2
+        return gameover_flag # winner is -1 or 1
     else:
-        return -1 # game still ongoing
+        return None # game still ongoing
     
 ### GAME STATUS SECTION END ###
 
-class TicTacToeEnv(gym.Env):
+class ConnectFourEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, alpha=0.02, show_number=False):
+    def __init__(self, alpha=0.02, show_number=False, opponent = 'random', start_mark = 'O', interactive_mode = False):
         self.action_space = spaces.Discrete(NUM_COLUMNS)
         #self.observation_space = spaces.Discrete(NUM_COLUMNS * NUM_ROWS)
         NUM_CELLS = NUM_COLUMNS * NUM_ROWS
@@ -167,8 +168,10 @@ class TicTacToeEnv(gym.Env):
             high = np.array(NUM_CELLS*[1], dtype=np.int8),
         )
         self.alpha = alpha
-        self.set_start_mark('O')
+        self.set_start_mark(start_mark)
         self.show_number = show_number
+        self.opponent = opponent
+        self.interactive_mode = interactive_mode
         self.seed()
         self.reset()
 
@@ -181,7 +184,36 @@ class TicTacToeEnv(gym.Env):
         self.done = False
         return self._get_obs()
 
+    def check_action_valid(self, action):
+        """ Util for action masking. Check if provided action is valid.
+
+        """
+        assert self.action_space.contains(action)
+        return self.board[:, action][0] == 0
+
     def step(self, action):
+        obs, reward, done, info = self._step(action) # 
+        if done:
+            return obs, reward, done, info
+        else: # game not done, also step with opponent
+            step_reward = reward
+
+            if self.opponent == 'random':
+                assert self.opponent == 'random'
+                #action = self.opponent.get_action(obs) # TODO
+
+                all_actions = [0,1,2,3,4,5,6]
+                valid_actions = [a for a in all_actions if self.check_action_valid(a)]
+                action = random.choice(valid_actions)
+            else:
+                action = self.opponent.predict_with_invalid_mask(obs, env = self)
+
+            obs, opponent_reward, done, info = self._step(action)
+
+            reward = step_reward if not done else -1.0*opponent_reward # flip sign if game is done
+            return obs, step_reward, done, info
+
+    def _step(self, action):
         """Step environment by action.
         Args:
             action (int): Location
@@ -197,9 +229,10 @@ class TicTacToeEnv(gym.Env):
 
         loc = action
         if self.done:
+            assert 'Error: game already terminated!'
             return self._get_obs(), 0, True, None
 
-        reward = NO_REWARD
+        reward = ACTION_REWARD
         # place
         col_vals = self.board[:, loc] # get the column
         row_index = np.argwhere(col_vals == 0)[-1, -1] # get index of "bottom-most" empty cell
@@ -209,11 +242,16 @@ class TicTacToeEnv(gym.Env):
         status = check_game_status(self.board)
         logging.debug("check_game_status board {} mark '{}'"
                       " status {}".format(self.board, self.mark, status))
-        if status >= 0:
+        if status is not None:
             self.done = True
-            if status in [1, 2]:
+            if status == 0:
+                # draw
+                reward = TIE_REWARD
+            elif status in [-1, 1]:
                 # always called by self
-                reward = O_REWARD if self.mark == 'O' else X_REWARD
+                reward = GAME_REWARD
+            else:
+                assert False, 'inccorrect status code: ' + status
 
         # switch turn
         self.mark = next_mark(self.mark)
@@ -223,9 +261,13 @@ class TicTacToeEnv(gym.Env):
 
     def _get_obs(self):
         # TODO: "unroll array to list!"
+
+        if self.interactive_mode:
+            return self.board.flatten().reshape(1,-1), self.mark
         #return self.board.flatten(), self.mark
         #return self.board.flatten()#tuple(self.board.flatten())#, self.mark
-        return self.board.flatten().reshape(1,-1)
+        else:
+            return self.board.flatten().reshape(1,-1)
 
     def render(self, mode='human', close=False):
         if close:
@@ -261,7 +303,7 @@ class TicTacToeEnv(gym.Env):
 
     def _show_result(self, showfn, mark, reward):
         status = check_game_status(self.board)
-        assert status >= 0
+        assert status in [-1, 0, 1]
         if status == 0:
             showfn("==== Finished: Draw ====")
         else:
