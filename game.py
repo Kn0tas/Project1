@@ -6,7 +6,7 @@ import numpy as np
 
 from gym import spaces
 
-CODE_MARK_MAP = {0: ' ', 1: 'O', 2: 'X'}
+CODE_MARK_MAP = {0: ' ', -1: 'O', 1: 'X'}
 NUM_LOC = 9
 O_REWARD = 1
 X_REWARD = -1
@@ -154,13 +154,18 @@ def check_game_status(board):
     
 ### GAME STATUS SECTION END ###
 
-
 class TicTacToeEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self, alpha=0.02, show_number=False):
         self.action_space = spaces.Discrete(NUM_COLUMNS)
-        self.observation_space = spaces.Discrete(NUM_COLUMNS * NUM_ROWS)
+        #self.observation_space = spaces.Discrete(NUM_COLUMNS * NUM_ROWS)
+        NUM_CELLS = NUM_COLUMNS * NUM_ROWS
+        #self.observation_space = spaces.Box(low=-1, high=1, shape=(1, NUM_COLUMNS * NUM_ROWS), dtype=np.int8)
+        self.observation_space = spaces.Box( # seems identical to above, but does not yield non-1D warning??
+            low = np.array(NUM_CELLS*[-1], dtype=np.int8),
+            high = np.array(NUM_CELLS*[1], dtype=np.int8),
+        )
         self.alpha = alpha
         self.set_start_mark('O')
         self.show_number = show_number
@@ -171,7 +176,7 @@ class TicTacToeEnv(gym.Env):
         self.start_mark = mark
 
     def reset(self):
-        self.board = np.zeros((NUM_ROWS,NUM_COLUMNS)) # make this a board of 0. (Game Start)
+        self.board = np.zeros((NUM_ROWS,NUM_COLUMNS), dtype=np.int8) # make this a board of 0. (Game Start)
         self.mark = self.start_mark
         self.done = False
         return self._get_obs()
@@ -188,7 +193,7 @@ class TicTacToeEnv(gym.Env):
         """
 
         assert self.action_space.contains(action)
-        assert self.board[:, action][0] == 0           # Check that the column is not full.
+        assert self.board[:, action][0] == 0, f'crashed on forbidden action: {action}, board state: {self.board}'           # Check that the column is not full.
 
         loc = action
         if self.done:
@@ -212,12 +217,15 @@ class TicTacToeEnv(gym.Env):
 
         # switch turn
         self.mark = next_mark(self.mark)
-        return self._get_obs(), reward, self.done, None
+
+        info = {}
+        return self._get_obs(), reward, self.done, info
 
     def _get_obs(self):
         # TODO: "unroll array to list!"
         #return self.board.flatten(), self.mark
-        return tuple(self.board.flatten()), self.mark
+        #return self.board.flatten()#tuple(self.board.flatten())#, self.mark
+        return self.board.flatten().reshape(1,-1)
 
     def render(self, mode='human', close=False):
         if close:
