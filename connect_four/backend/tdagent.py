@@ -15,10 +15,10 @@ import click
 from tqdm import tqdm as _tqdm
 tqdm = _tqdm
 
-from game import TicTacToeEnv, set_log_level_by, agent_by_mark,\
+from connect_four.backend.game import ConnectFourEnv, set_log_level_by, agent_by_mark,\
     next_mark, check_game_status, after_action_state, O_REWARD, X_REWARD
-from play_human import HumanAgent
-#from base_agent import BaseAgent
+from connect_four.backend.play_human import HumanAgent
+#from connect_four.backend.base_agent import BaseAgent
 
 
 DEFAULT_VALUE = 0

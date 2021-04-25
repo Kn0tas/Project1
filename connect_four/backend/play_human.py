@@ -3,7 +3,7 @@ import sys
 
 import click
 
-from game import ConnectFourEnv, agent_by_mark, next_mark
+from connect_four.backend.game import ConnectFourEnv, agent_by_mark, next_mark
 
 
 class HumanAgent(object):

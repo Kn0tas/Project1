@@ -1,6 +1,6 @@
-from game import ConnectFourEnv, set_log_level_by, agent_by_mark,\
+from connect_four.backend.game import ConnectFourEnv, set_log_level_by, agent_by_mark,\
     next_mark, check_game_status, after_action_state
-from play_human import HumanAgent
+from connect_four.backend.play_human import HumanAgent
 
 from stable_baselines3.a2c import A2C
 from gym import spaces

@@ -1,6 +1,6 @@
 import random
 
-from game import TicTacToeEnv, agent_by_mark, check_game_status, after_action_state, tomark, next_mark
+from connect_four.backend.game import ConnectFourEnv, agent_by_mark, check_game_status, after_action_state, tomark, next_mark
 
 
 class BaseAgent(object):
