@@ -1,9 +1,13 @@
-import pygame
 import time
+import random
 import numpy as np
+import pygame
+import click
 
 from connect_four.backend.game import agent_by_mark, ConnectFourEnv, next_mark # possibly need to set export DISPLAY=:0 in terminal?
 from connect_four.backend.play_human import HumanAgent
+from connect_four.backend.train_sb_agent import ConnectFourA2C
+from connect_four.backend.base_agent import RandomAgent
 
 
 ### GLOABAL PARAMS ####
@@ -36,9 +40,10 @@ SCREEN_HEIGHT = BOARD_HEIGHT + DROP_PANEL_HEIGHT
 
 # draw empty cells
 def get_pixel_map():
-    global screen
-    global CELL_RADIUS, CELL_PADDING, CELL_COLOR
-    global NUM_ROWS, NUM_COLS
+    #global screen
+    global IDXS_TO_PIXEL_CORDS_MAP
+    #global CELL_RADIUS, CELL_PADDING, CELL_COLOR
+    #global NUM_ROWS, NUM_COLS
     
     IDXS_TO_PIXEL_CORDS_MAP = dict()
 
@@ -54,7 +59,8 @@ def get_pixel_map():
     return IDXS_TO_PIXEL_CORDS_MAP
 
 def draw_board(board):
-    global IDXS_TO_PIXEL_CORDS_MAP
+    #global IDXS_TO_PIXEL_CORDS_MAP
+    #global screen
     
     if isinstance(board, tuple): # undo board flattening
         board = np.array(board).reshape(6, 7)
@@ -69,8 +75,9 @@ def draw_board(board):
             marker_color = color_map[int(marker_value)]
             pygame.draw.circle(screen, marker_color, IDXS_TO_PIXEL_CORDS_MAP[(row_index, col_index)], CELL_RADIUS)
 
+def init_pygame_backend(board):
 
-def init_pygame_backend():
+    global screen
 
     pygame.init()
 
@@ -83,20 +90,99 @@ def init_pygame_backend():
 
     draw_board(board)
 
-if __name__ == '__main__':
+@click.command()
+@click.option('--player1_string')#, help="Player 1 string.")
+@click.option('--player2_string')#, help="Player 2 string.")
+def run_game(player1_string, player2_string):
 
-    
-    #human_agent = HumanAgent('O')
-    #ai_agent = ConnectFourA2C.load('a2c_agent_50k_vs100kA2C')
-        
+    print(player1_string)
+    print(player2_string) # ../agents/a2c_agent_50k_vs100kA2C
+
+    # setup playing agents
+    def init_agent(player_string, marker):
+        if player_string == 'human':
+            return HumanAgent(marker)
+        elif player_string == 'random':
+            return RandomAgent(marker)
+        else:
+            return ConnectFourA2C.load(player_string)
+    player1_agent = init_agent(player1_string, 'O')
+    player2_agent = init_agent(player2_string, 'X')
+    marker_to_agent_map = {
+        'O': player1_agent,
+        'X': player2_agent,
+    }
+    print(marker_to_agent_map)
+    get_agent_by_mark = lambda marker: marker_to_agent_map[marker]
+
+    # setup environment
+    env = ConnectFourEnv(show_number=False,
+                         interactive_mode = True,
+                         opponent = 'random')     # random??
     state = env.reset()
-    board, mark = state
+    observation, mark = state
     done = False
 
-    init_pygame_backend(board)
+    # init frondtend
+    init_pygame_backend(observation)
 
+    # enter playing loop
+    try:
+        pygame.display.flip()
+        while True:
+            e = pygame.event.poll()
+            if e.type == pygame.QUIT:
+                break
 
+            pygame.display.flip()
 
+            env.show_turn(True, mark) # print out which player to play
+            agent2play = get_agent_by_mark(mark)
 
+            if isinstance(agent2play, HumanAgent): # do mouse click action
+                print('Human agent!!')
+                
+                while True:
+                    e = pygame.event.poll()
+                    mouse_x, mouse_y = pygame.mouse.get_pos()
+                    if e.type == pygame.MOUSEBUTTONDOWN:
+                        print('detected mouse event!')
+                        CLICK_ACTION = int(mouse_x // (SCREEN_WIDTH/NUM_COLS))
+                        ava_actions = env.available_actions()
+                        action, action_is_valid = agent2play.pygame_act(ava_actions,CLICK_ACTION)
+                        if not action_is_valid:
+                            print('Invalid action not supported, make a valid action!')
+                        else:
+                            break
+            else: # do ai-agent action
+                print('AI agent!!')
+                if isinstance(agent2play, RandomAgent):
+                    ava_actions = env.available_actions()
+                    action = agent2play.act(ava_actions)
+                else:
+                    action = agent2play.predict_with_invalid_mask(observation, env = env)
+                time.sleep(1 + 1.5*random.random()) # fake "thinking"
+            
+            # then; update env with collected action
+            state, reward, done, info = env._step(action)
+            observation, mark = state
+            draw_board(observation)
+            if done:
+                env.show_result(True, mark, reward)
+                draw_board(observation)
+                break
 
-    
+        print('Game over! Click closing symnbol to quit...')
+        while True:
+            e = pygame.event.poll()
+            if e.type == pygame.QUIT:
+                break
+
+    except Exception as e:
+        pygame.quit()
+        raise e
+    finally:
+        pygame.quit()
+
+if __name__ == '__main__':
+    run_game()

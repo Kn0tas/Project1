@@ -15,3 +15,10 @@ class BaseAgent(object):
                 if tomark(gstatus) == self.mark:
                     return action
         return random.choice(ava_actions)
+
+class RandomAgent:
+    def __init__(self, mark):
+        self.mark = mark
+
+    def act(self, ava_actions):
+        return random.choice(ava_actions)
