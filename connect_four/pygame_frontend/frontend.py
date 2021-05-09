@@ -92,11 +92,11 @@ def init_pygame_backend(board):
 
 @click.command()
 @click.option('--player1_string')#, help="Player 1 string.")
-@click.option('--player2_string')#, help="Player 2 string.")
+@click.option('--player2_string')#, help="Player 2 string.") 
 def run_game(player1_string, player2_string):
 
     print(player1_string)
-    print(player2_string) # ../agents/a2c_agent_50k_vs100kA2C
+    print(player2_string) # ../agents/a2c_agent_50k_vs100kA2C # a2c_agent_50k_vs_random
 
     # setup playing agents
     def init_agent(player_string, marker):
@@ -112,6 +112,9 @@ def run_game(player1_string, player2_string):
         return agent, player_name
     player1_agent, player1_name = init_agent(player1_string, 'O')
     player2_agent, player2_name = init_agent(player2_string, 'X')
+
+    player1_name = 'bot-a-tron-5000'
+    player2_name = 'bot-a-tron-3000'
 
 
     marker_to_agent_map = {
@@ -136,6 +139,9 @@ def run_game(player1_string, player2_string):
                          opponent = 'random')     # random??
     state = env.reset()
     observation, mark = state
+    print(mark)
+    mark = 'X'
+    print(mark)
     done = False
 
     # init frondtend
@@ -184,8 +190,8 @@ def run_game(player1_string, player2_string):
                     ava_actions = env.available_actions()
                     action = agent2play.act(ava_actions)
                 else:
-                    action = agent2play.predict_with_invalid_mask(observation, env = env)
-                #time.sleep(1 + 1.5*random.random()) # fake "thinking"
+                    action = agent2play.predict_with_invalid_mask(observation, env = env, deterministic = False) # dont sample -- take highest prob always
+                time.sleep(0.5 + 1.5*random.random()) # fake "thinking"
             
             # then; update env with collected action
             state, reward, done, info = env._step(action)

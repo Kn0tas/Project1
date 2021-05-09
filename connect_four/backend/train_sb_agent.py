@@ -1,3 +1,5 @@
+import random
+
 from connect_four.backend.game import ConnectFourEnv, set_log_level_by, agent_by_mark,\
     next_mark, check_game_status, after_action_state
 from connect_four.backend.play_human import HumanAgent
@@ -28,6 +30,8 @@ from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import explained_variance
+
+MAX_PROB_ACTION_SAMPLES = 10
 
 
 class ConnectFourOnPolicyAlgorithm(BaseAlgorithm):
@@ -231,26 +235,65 @@ class ConnectFourOnPolicyAlgorithm(BaseAlgorithm):
                 assert len(env.envs) == 1 # currently does not support multieple envs..
 
                 # COMPUTE HIGHEST-PROB VALID ACTION!
-                all_actions = [0,1,2,3,4,5,6] # TODO: Infer from env!
-                action_probabilities = {}
+                 # TODO: Infer from env!
+                #action_probabilities = {}
 
                 #print(self.env)
                 #print(self.env.envs, len(self.env.envs))
                 # print(self.envs[env_idx])
                 #assert False, 'delib'
 
+                obs_tensor = th.as_tensor(self._last_obs).to(self.device)
+                
+                sample_count = 0
+                while True:
+                    sample_count += 1
+                    actions, values, log_probs = self.policy.forward(obs_tensor, deterministic = False)
+                    #print(actions)
+                    #print(actions.cpu().numpy()[0])
+                    if env.envs[0].check_action_valid(actions.cpu().numpy()[0]):
+                        actions = actions.cpu().numpy()
+                        break
+                    
+                    if MAX_PROB_ACTION_SAMPLES <= sample_count: #
+                        all_actions = [0,1,2,3,4,5,6]
+                        valid_actions = [a for a in all_actions if env.envs[0].check_action_valid(a)]
+                        actions = np.array([random.choice(valid_actions)])
+                        break
+
+
+                print('from collect_rollouts, sample count was: ', sample_count)
+                
+                """
                 for potential_action in all_actions:
                     if env.envs[0].check_action_valid(potential_action): # TODO: implement env-is-valid check!
                         obs_tensor = th.as_tensor(self._last_obs).to(self.device)
-                        actions, values, log_probs = self.policy.forward(obs_tensor)
+                        actions, values, log_probs = self.policy.forward(obs_tensor, deterministic = False)
+                        
+
+                        print(log_probs)
+                        print(actions)
+                        assert False, 'delib failure!'
                         #print(log_probs)
-                        action_probabilities[potential_action] = log_probs.cpu().numpy()[0]
+                        action_probabilities[potential_action] = log_probs.cpu().numpy()[0] # why 0th index?
 
                 # Convert to pytorch tensor
                 obs_tensor = th.as_tensor(self._last_obs).to(self.device)
                 actions, values, log_probs = self.policy.forward(obs_tensor)
 
-            # OBS: Will always select first valid aciton if all probs are the same !
+                # tmp debug
+                log_probs_arr = log_probs.cpu().numpy()
+                print(log_probs)
+                print(log_probs_arr)
+                if np.unique(log_probs_arr).shape[0] != log_probs_arr.shape[0]:
+                    print('action probs has dups!')
+                    print(log_probs_arr)
+
+                #print('from collect_rollouts: ', action_probabilities)
+                if 0.01 > np.random.rand():
+                    assert False, 'delib failure!'
+
+            # OBS: Will always select first valid aciton if all probs are the same ! # TODO: sample instead !
             MOST_PROBABLE_VALID_ACTION = max([(k, v) for k, v in action_probabilities.items()], key = lambda x: x[1])[0]
 
             #print(action_probabilities, MOST_PROBABLE_VALID_ACTION)
@@ -267,6 +310,8 @@ class ConnectFourOnPolicyAlgorithm(BaseAlgorithm):
 
 
             #print(action_probabilities)
+            """
+
 
             # Rescale and perform action
             clipped_actions = actions
@@ -440,7 +485,7 @@ class ConnectFourA2C(ConnectFourOnPolicyAlgorithm):
             logger.record("train/std", th.exp(self.policy.log_std).mean().item())
 
 
-    def predict_with_invalid_mask(self, observation, env = None):
+    def predict_with_invalid_mask(self, observation, env = None, deterministic = False):
         """ Get most probable action that is valid wrt. env state.
 
         """
@@ -450,6 +495,25 @@ class ConnectFourA2C(ConnectFourOnPolicyAlgorithm):
             env = self.env.envs[0]
 
         with th.no_grad():
+
+            obs_tensor = th.as_tensor(self._last_obs).to(self.device)
+            sample_count = 0
+            while True:
+                sample_count += 1
+                actions, values, log_probs = self.policy.forward(obs_tensor, deterministic = deterministic) # TODO: Should be deteminsitc? & invalid filtered...?
+                action = actions.cpu().numpy()[0]
+                if env.check_action_valid(action):
+                    break
+
+                if MAX_PROB_ACTION_SAMPLES <= sample_count:
+                    all_actions = [0,1,2,3,4,5,6]
+                    valid_actions = [a for a in all_actions if env.check_action_valid(a)]
+                    action = random.choice(valid_actions)
+                    break
+
+            print('from predict_with_invalid mask, sample count was: ', sample_count)
+            
+            """
 
             # COMPUTE HIGHEST-PROB VALID ACTION!
             all_actions = [0,1,2,3,4,5,6] # TODO: Infer from env!
@@ -462,9 +526,15 @@ class ConnectFourA2C(ConnectFourOnPolicyAlgorithm):
                     #print(log_probs)
                     action_probabilities[potential_action] = log_probs.cpu().numpy()[0]
 
+
+            print(action_probabilities)
+            if 0.05 > np.random.rand():
+                assert False, 'delib failure!'
+
             MOST_PROBABLE_VALID_ACTION = max([(k, v) for k, v in action_probabilities.items()], key = lambda x: x[1])[0]
             #actions = np.array([MOST_PROBABLE_VALID_ACTION])
-        return MOST_PROBABLE_VALID_ACTION
+        """
+        return action
         #return self.policy.predict(observation, state, mask, deterministic)
 
 # init SB agent...
@@ -477,7 +547,17 @@ if __name__ == '__main__':
 
 
     #env_ = ConnectFourEnv()
-    opponent_agent = ConnectFourA2C.load('a2c_agent_100k')#, env = env_)
+    opponent_agent = ConnectFourA2C.load('a2c_agent_50k_vs_random') # 'a2c_agent_50k_vs100kA2C' #ConnectFourA2C.load('a2c_agent_100k')#, env = env_)
+    
+    #import os
+    #print(os.listdir('..'))
+    #assert False
+    
+    #opponent_agent = 'random'
+
+    print(f'Using opponent_agent: {opponent_agent}')
+
+
     env = ConnectFourEnv(opponent = opponent_agent)
 
     #obs = env.reset()
@@ -489,12 +569,11 @@ if __name__ == '__main__':
 
     #print(env.observation_space)
 
-    agent = ConnectFourA2C(policy = 'MlpPolicy', env=env, verbose=1)
+    agent = ConnectFourA2C(policy = 'MlpPolicy', env=env, verbose=1, tensorboard_log="./test_tensorboard/")
     #agent2 = ConnectFourA2C(policy = 'MlpPolicy', env=env(opponent = agent1), verbose=1)
 
 
     agent.learn(total_timesteps=50000)
-    agent.save('a2c_agent_50k_vs100kA2C')
-
+    agent.save('a2c_agent_50k_vs_50kA2C_random')
 
     #print(agent)

@@ -223,8 +223,8 @@ class ConnectFourEnv(gym.Env):
             bool: Done
             dict: Additional information
         """
-
-        assert self.action_space.contains(action)
+        
+        assert self.action_space.contains(action), 'Invalid action: ' + action
         assert self.board[:, action][0] == 0, f'crashed on forbidden action: {action}, board state: {self.board}'           # Check that the column is not full.
 
         loc = action
