@@ -67,7 +67,7 @@ def draw_board(board):
     else:
         board = board.reshape(6,7)
         
-    color_map = {0: CELL_COLOR, -1: MARKER_1_COLOR, 1: MARKER_2_COLOR}
+    color_map = {0: CELL_COLOR, 1: MARKER_1_COLOR, -1: MARKER_2_COLOR}
     
     for row_index in range(board.shape[0]):
         for col_index in range(board.shape[1]):            
@@ -101,19 +101,34 @@ def run_game(player1_string, player2_string):
     # setup playing agents
     def init_agent(player_string, marker):
         if player_string == 'human':
-            return HumanAgent(marker)
+            player_name = 'A lousy human'
+            agent = HumanAgent(marker)
         elif player_string == 'random':
-            return RandomAgent(marker)
+            player_name = 'A very drunk robot'
+            agent = RandomAgent(marker)
         else:
-            return ConnectFourA2C.load(player_string)
-    player1_agent = init_agent(player1_string, 'O')
-    player2_agent = init_agent(player2_string, 'X')
+            player_name = 'The grinder bot-a-tron-3000'
+            agent = ConnectFourA2C.load(player_string)
+        return agent, player_name
+    player1_agent, player1_name = init_agent(player1_string, 'O')
+    player2_agent, player2_name = init_agent(player2_string, 'X')
+
+
     marker_to_agent_map = {
-        'O': player1_agent,
-        'X': player2_agent,
+        'O': (player1_agent, player1_name, MARKER_1_COLOR), # yellow
+        'X': (player2_agent, player2_name, MARKER_2_COLOR),
     }
-    print(marker_to_agent_map)
-    get_agent_by_mark = lambda marker: marker_to_agent_map[marker]
+    get_agent_by_mark = lambda marker: marker_to_agent_map[marker][0]
+    get_player_name_by_mark = lambda marker: marker_to_agent_map[marker][1]
+    get_player_color_by_mark = lambda marker: marker_to_agent_map[marker][2]
+
+    # TODO: Draw the player names...
+    #font = pygame.font.SysFont(None, 24)
+    #img = font.render('WINNER: ' + winning_player_name, True, pygame.Color('green'))
+    #screen.blit(img, (20, 20))
+
+
+    get_agent_by_mark = lambda marker: marker_to_agent_map[marker][0]
 
     # setup environment
     env = ConnectFourEnv(show_number=False,
@@ -125,6 +140,13 @@ def run_game(player1_string, player2_string):
 
     # init frondtend
     init_pygame_backend(observation)
+    # draw player names...
+    fontsize = 18
+    font = pygame.font.SysFont(None, fontsize)
+    img1 = font.render('Player 1: ' + player1_name, True, MARKER_1_COLOR)
+    screen.blit(img1, (10, 10))
+    img2 = font.render('Player 2: ' + player2_name, True, MARKER_2_COLOR)
+    screen.blit(img2, (BOARD_WIDTH-180, 10))
 
     # enter playing loop
     try:
@@ -134,7 +156,9 @@ def run_game(player1_string, player2_string):
             if e.type == pygame.QUIT:
                 break
 
-            pygame.display.flip()
+            pygame.display.flip()                
+
+            current_player_mark = mark
 
             env.show_turn(True, mark) # print out which player to play
             agent2play = get_agent_by_mark(mark)
@@ -161,7 +185,7 @@ def run_game(player1_string, player2_string):
                     action = agent2play.act(ava_actions)
                 else:
                     action = agent2play.predict_with_invalid_mask(observation, env = env)
-                time.sleep(1 + 1.5*random.random()) # fake "thinking"
+                #time.sleep(1 + 1.5*random.random()) # fake "thinking"
             
             # then; update env with collected action
             state, reward, done, info = env._step(action)
@@ -169,7 +193,18 @@ def run_game(player1_string, player2_string):
             draw_board(observation)
             if done:
                 env.show_result(True, mark, reward)
-                draw_board(observation)
+
+
+                #DROP_PANEL_WIDTH = BOARD_WIDTH
+                #DROP_PANEL_HEIGHT = 80
+
+                winning_player_name = get_player_name_by_mark(current_player_mark)
+                fontsize = 30
+                font = pygame.font.SysFont(None, fontsize)
+                img = font.render('WINNER: ' + winning_player_name, True, get_player_color_by_mark(current_player_mark))
+                screen.blit(img, (90, DROP_PANEL_HEIGHT/2 - fontsize/2 + 20)) # x y? + y margin
+
+                pygame.display.flip()
                 break
 
         print('Game over! Click closing symnbol to quit...')
