@@ -1,8 +1,8 @@
 import random
+from stable_baselines3.common import logger
 
-from connect_four.backend.game import ConnectFourEnv, set_log_level_by, agent_by_mark,\
-    next_mark, check_game_status, after_action_state
-from connect_four.backend.play_human import HumanAgent
+from connect_four.backend.game import ConnectFourEnv
+#from connect_four.backend.play_human import HumanAgent
 
 from stable_baselines3.a2c import A2C
 from gym import spaces
@@ -31,8 +31,9 @@ from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import explained_variance
 
+# config params...
 MAX_PROB_ACTION_SAMPLES = 10
-
+#EPSILON = 0.2
 
 class ConnectFourOnPolicyAlgorithm(BaseAlgorithm):
     """
@@ -234,33 +235,28 @@ class ConnectFourOnPolicyAlgorithm(BaseAlgorithm):
 
                 assert len(env.envs) == 1 # currently does not support multieple envs..
 
-                # COMPUTE HIGHEST-PROB VALID ACTION!
-                 # TODO: Infer from env!
-                #action_probabilities = {}
-
-                #print(self.env)
-                #print(self.env.envs, len(self.env.envs))
-                # print(self.envs[env_idx])
-                #assert False, 'delib'
-
                 obs_tensor = th.as_tensor(self._last_obs).to(self.device)
                 
                 sample_count = 0
                 while True:
                     sample_count += 1
                     actions, values, log_probs = self.policy.forward(obs_tensor, deterministic = False)
-                    #print(actions)
-                    #print(actions.cpu().numpy()[0])
-                    if env.envs[0].check_action_valid(actions.cpu().numpy()[0]):
-                        actions = actions.cpu().numpy()
-                        break
+                    agent_action_cached = actions
                     
-                    if MAX_PROB_ACTION_SAMPLES <= sample_count: #
+                    # infer epsilon from environment...? (TODO: maybe infer from somewhere else)
+                    epsilon = env.envs[0].epsilon or -99
+                    print(epsilon)
+                    if (np.random.rand() < epsilon) or (MAX_PROB_ACTION_SAMPLES <= sample_count):
+                        
                         all_actions = [0,1,2,3,4,5,6]
                         valid_actions = [a for a in all_actions if env.envs[0].check_action_valid(a)]
                         actions = np.array([random.choice(valid_actions)])
+                        print(f'RADNOM ACTION TRIGGER! {agent_action_cached.cpu().numpy()[0]} --> {actions[0]}')
                         break
-
+                    
+                    if env.envs[0].check_action_valid(actions.cpu().numpy()[0]):
+                        actions = actions.cpu().numpy()
+                        break
 
                 print('from collect_rollouts, sample count was: ', sample_count)
                 
@@ -547,13 +543,13 @@ if __name__ == '__main__':
 
 
     #env_ = ConnectFourEnv()
-    opponent_agent = ConnectFourA2C.load('a2c_agent_50k_vs_random') # 'a2c_agent_50k_vs100kA2C' #ConnectFourA2C.load('a2c_agent_100k')#, env = env_)
+    #opponent_agent = ConnectFourA2C.load('a2c_agent_50k_vs_random') # 'a2c_agent_50k_vs100kA2C' #ConnectFourA2C.load('a2c_agent_100k')#, env = env_)
     
     #import os
     #print(os.listdir('..'))
     #assert False
-    
-    #opponent_agent = 'random'
+    """
+    opponent_agent = 'random'
 
     print(f'Using opponent_agent: {opponent_agent}')
 
@@ -573,7 +569,55 @@ if __name__ == '__main__':
     #agent2 = ConnectFourA2C(policy = 'MlpPolicy', env=env(opponent = agent1), verbose=1)
 
 
-    agent.learn(total_timesteps=50000)
-    agent.save('a2c_agent_50k_vs_50kA2C_random')
+    total_timesteps = 10000
+    agent.learn(total_timesteps=total_timesteps)
+    agent_name = f'A2Cagent_epsilon{EPSILON}_{int(total_timesteps//1e3)}k_vs_{str(opponent_agent)}'
+    print('SAVING AGENT: ' + agent_name)
+    agent.save(agent_name)
 
+    """
+
+    import os
+    def create_new_agent_generation(experiment_dir):
+
+        def load_agents_from_dir(previous_generation_dir):
+            dirpath = os.path.join(experiment_dir, previous_generation_dir)
+            print(dirpath)
+            files = os.listdir(dirpath)
+            agents = [ConnectFourA2C.load(os.path.join(dirpath, f)) for f in files]
+            return agents
+
+        if experiment_dir is None:
+            previous_agents_list = 'random'
+            experiment_dir = 'experiment_runs' + str(int(time.time()))
+            os.makedirs(experiment_dir) # create fold for agent generations
+            generation_index = 1
+            
+        else:
+            previous_generation_dir = max(os.listdir(experiment_dir))
+            previous_agents_list = load_agents_from_dir(previous_generation_dir)
+            generation_index = len((os.listdir(experiment_dir))) + 1
+
+        agent_generation_dirname = 'generation_' + str(generation_index)
+
+        total_timesteps = 1000
+        for epsilon in [0.05, 0.2, 0.5]:
+
+            # create "environment" with previous agent-group as opponent
+            if previous_agents_list == 'random':
+                env = ConnectFourEnv(opponent = 'random')
+            else:
+                env = ConnectFourEnv(opponent_group = previous_agents_list, epsilon = epsilon)
+            # create new agent with current epislon
+            new_agent = ConnectFourA2C(policy = 'MlpPolicy', env=env, verbose=1)
+            agent_name = f'A2Cagent_epsilon{epsilon}_{int(total_timesteps//1e3)}k_vs_generation_{generation_index-1}'
+            # train the agent
+            print("training agent: " + agent_name)
+            new_agent.learn(total_timesteps=total_timesteps) # TODO: might want to train variable number of steps depending on results?
+            # save the agent
+            print("saving agent: " + agent_name + " to: " + os.path.join(experiment_dir, agent_generation_dirname, agent_name))
+
+            new_agent.save(os.path.join(experiment_dir, agent_generation_dirname, agent_name))
+
+    create_new_agent_generation("experiment_runs1621633673")
     #print(agent)

@@ -158,7 +158,7 @@ def check_game_status(board):
 class ConnectFourEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, alpha=0.02, show_number=False, opponent = 'random', start_mark = 'O', interactive_mode = False):
+    def __init__(self, alpha=0.02, show_number=False, opponent = None, opponent_group = None, start_mark = 'O', interactive_mode = False, epsilon = None):
         self.action_space = spaces.Discrete(NUM_COLUMNS)
         #self.observation_space = spaces.Discrete(NUM_COLUMNS * NUM_ROWS)
         NUM_CELLS = NUM_COLUMNS * NUM_ROWS
@@ -171,6 +171,17 @@ class ConnectFourEnv(gym.Env):
         self.set_start_mark(start_mark)
         self.show_number = show_number
         self.opponent = opponent
+        self.opponent_group = opponent_group
+        assert opponent is None or opponent_group is None
+        assert opponent != opponent_group
+
+        if epsilon is None and opponent != 'random':
+            EPSILON = 0.2
+            print('WARNING: DEFAULTING EPSILON TO: ' + EPSILON)
+            self.epsilon = EPSILON
+        else:
+            self.epsilon = epsilon
+
         self.interactive_mode = interactive_mode
         self.seed()
         self.reset()
@@ -182,6 +193,12 @@ class ConnectFourEnv(gym.Env):
         self.board = np.zeros((NUM_ROWS,NUM_COLUMNS), dtype=np.int8) # make this a board of 0. (Game Start)
         self.mark = self.start_mark
         self.done = False
+
+        # sample 1 opponent in the group, to be used for the next game
+        if self.opponent_group is not None:
+            self.opponent = random.choice(self.opponent_group)
+            print('Selecting new opponent agent from group: ' + str(self.opponent))
+
         return self._get_obs()
 
     def check_action_valid(self, action):
