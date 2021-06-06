@@ -1,5 +1,6 @@
 import random
 from stable_baselines3.common import logger
+from collections import deque
 
 from connect_four.backend.game import ConnectFourEnv
 #from connect_four.backend.play_human import HumanAgent
@@ -91,6 +92,7 @@ class ConnectFourOnPolicyAlgorithm(BaseAlgorithm):
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
         supported_action_spaces: Optional[Tuple[gym.spaces.Space, ...]] = None,
+        epsilon = 0.0
     ):
 
         super(ConnectFourOnPolicyAlgorithm, self).__init__(
@@ -117,6 +119,7 @@ class ConnectFourOnPolicyAlgorithm(BaseAlgorithm):
         self.vf_coef = vf_coef
         self.max_grad_norm = max_grad_norm
         self.rollout_buffer = None
+        self.epsilon = epsilon
 
         if _init_setup_model:
             self._setup_model()
@@ -164,6 +167,21 @@ class ConnectFourOnPolicyAlgorithm(BaseAlgorithm):
     ) -> "OnPolicyAlgorithm":
         iteration = 0
 
+        def do_early_exit_due_to_winning(ep_info_buffer, iteration, force = False):
+            # TODO: check frac wins, exit if needed
+            if force or ((len(ep_info_buffer) == ep_info_buffer.maxlen) and iteration % 250):
+                # TODO: make this block smarter
+                wins_in_queue = [0 < d['r'] for d in ep_info_buffer]
+                fraction_of_wins = np.mean(wins_in_queue)
+                print("fraction_of_wins after {iteration} iterations: ", fraction_of_wins)
+                if 0.9 < fraction_of_wins:
+                    print(f"Exiting due to more than 90% wins in the last 100 games after {iteration} iterations!")
+                    print(f'Agent total updates: {agent_to_improve._n_updates}')
+                    return True
+                else:
+                    return False
+
+        print(self.env)
         total_timesteps, callback = self._setup_learn(
             total_timesteps, eval_env, callback, eval_freq, n_eval_episodes, eval_log_path, reset_num_timesteps, tb_log_name
         )
@@ -192,10 +210,14 @@ class ConnectFourOnPolicyAlgorithm(BaseAlgorithm):
                 logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
                 logger.dump(step=self.num_timesteps)
 
+                if do_early_exit_due_to_winning(self.ep_info_buffer, iteration):
+                    break
+
             self.train()
 
         callback.on_training_end()
-
+        print('Exiting training due to max timesteps reached!')
+        _ = do_early_exit_due_to_winning(self.ep_info_buffer, iteration, force = True)
         return self
 
     def _get_torch_save_params(self) -> Tuple[List[str], List[str]]:
@@ -244,21 +266,21 @@ class ConnectFourOnPolicyAlgorithm(BaseAlgorithm):
                     agent_action_cached = actions
                     
                     # infer epsilon from environment...? (TODO: maybe infer from somewhere else)
-                    epsilon = env.envs[0].epsilon or -99
-                    print(epsilon)
+                    epsilon = self.epsilon # env.envs[0].epsilon or -99
+                    #print("epsilon ", epsilon)
                     if (np.random.rand() < epsilon) or (MAX_PROB_ACTION_SAMPLES <= sample_count):
                         
                         all_actions = [0,1,2,3,4,5,6]
                         valid_actions = [a for a in all_actions if env.envs[0].check_action_valid(a)]
                         actions = np.array([random.choice(valid_actions)])
-                        print(f'RADNOM ACTION TRIGGER! {agent_action_cached.cpu().numpy()[0]} --> {actions[0]}')
+                        #print(f'RADNOM ACTION TRIGGER! {agent_action_cached.cpu().numpy()[0]} --> {actions[0]}')
                         break
                     
                     if env.envs[0].check_action_valid(actions.cpu().numpy()[0]):
                         actions = actions.cpu().numpy()
                         break
 
-                print('from collect_rollouts, sample count was: ', sample_count)
+                #print('from collect_rollouts, sample count was: ', sample_count)
                 
                 """
                 for potential_action in all_actions:
@@ -323,6 +345,7 @@ class ConnectFourOnPolicyAlgorithm(BaseAlgorithm):
             #action_score = [0.1, 0.2, 0.3, 0.0 ,-0.2]
 
             new_obs, rewards, dones, infos = env.step(clipped_actions)
+            #print(rewards)
             #assert False, 'delib crash'
 
             self.num_timesteps += env.num_envs
@@ -507,7 +530,7 @@ class ConnectFourA2C(ConnectFourOnPolicyAlgorithm):
                     action = random.choice(valid_actions)
                     break
 
-            print('from predict_with_invalid mask, sample count was: ', sample_count)
+            #print('from predict_with_invalid mask, sample count was: ', sample_count)
             
             """
 
@@ -600,6 +623,7 @@ if __name__ == '__main__':
 
         agent_generation_dirname = 'generation_' + str(generation_index)
 
+        """ 
         total_timesteps = 1000
         for epsilon in [0.05, 0.2, 0.5]:
 
@@ -617,7 +641,61 @@ if __name__ == '__main__':
             # save the agent
             print("saving agent: " + agent_name + " to: " + os.path.join(experiment_dir, agent_generation_dirname, agent_name))
 
+            agent_name = f'A2Cagent_epsilon{epsilon}_{int(total_timesteps//1e3)}k_vs_generation_{generation_index-1}'
             new_agent.save(os.path.join(experiment_dir, agent_generation_dirname, agent_name))
 
-    create_new_agent_generation("experiment_runs1621633673")
+        """
+
+    #previous_agents_list
+    from copy import deepcopy
+    import gc
+
+    experiment_dirpath = None#'experiment_runs1622994637'
+
+    for generation in range(5):
+
+        if experiment_dirpath is None:
+
+            experiment_dirpath = 'experiment_runs' + str(int(time.time()))
+            os.makedirs(experiment_dirpath) # create fold for agent generations
+            
+            training_env = ConnectFourEnv(opponent = 'random')
+            agent_to_improve = ConnectFourA2C(policy = 'MlpPolicy', env=training_env, verbose=1)
+
+        else:
+            # load previous agent
+            #previous_agent_fname = max(os.listdir(experiment_dirpath))
+            #print("Loading agent: ", previous_agent_fname)
+            #agent_to_improve = ConnectFourA2C.load(os.path.join(experiment_dirpath, previous_agent_fname))
+
+            opponent_agent_clones = [] # make clones with diffrent epislons
+            for epsilon in [0.05, 0.2, 0.5]:
+                opponent_clone = deepcopy(agent_to_improve)
+                opponent_clone.epsilon = epsilon
+                opponent_agent_clones.append(opponent_clone)
+            print("Made opponent clones ", opponent_agent_clones)
+            #print(agent_to_improve.env)
+            training_env.opponent = None
+            training_env.opponent_group = opponent_agent_clones
+            #training_env = ConnectFourEnv(opponent_group = opponent_agent_clones)
+            #agent_to_improve.env = training_env # update the env to include new opponents
+            #agent_to_improve.env.num_envs = 1
+
+        max_total_timesteps = 50000
+        input("Press any key to init training")
+        agent_to_improve.learn(total_timesteps=max_total_timesteps, log_interval = 100)
+        # reset episode queue results prior to saving
+        new_queue = agent_to_improve.ep_info_buffer = deque(maxlen=agent_to_improve.ep_info_buffer.maxlen)
+
+        agent_name = f'A2C_agent_n_updates_{agent_to_improve._n_updates}'
+        print('saving agent')
+        agent_to_improve.save(os.path.join(experiment_dirpath, agent_name))
+        #del agent_to_improve, training_env
+        #gc.collect()
+
+    # TODO, save agent!
+
+    #create_new_agent_generation("experiment_runs1621633673")
     #print(agent)
+    # TODO: randomize starting turn184
+    
