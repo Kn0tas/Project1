@@ -1,9 +1,9 @@
 import random
-from stable_baselines3.common import logger
+from stable_baselines3.common import logger, utils
 from collections import deque
-
 from connect_four.backend.game import ConnectFourEnv
 #from connect_four.backend.play_human import HumanAgent
+import sys
 
 from stable_baselines3.a2c import A2C
 from gym import spaces
@@ -92,7 +92,8 @@ class ConnectFourOnPolicyAlgorithm(BaseAlgorithm):
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
         supported_action_spaces: Optional[Tuple[gym.spaces.Space, ...]] = None,
-        epsilon = 0.0
+        epsilon = 0.0,
+        buffer_len = 100
     ):
 
         super(ConnectFourOnPolicyAlgorithm, self).__init__(
@@ -120,9 +121,73 @@ class ConnectFourOnPolicyAlgorithm(BaseAlgorithm):
         self.max_grad_norm = max_grad_norm
         self.rollout_buffer = None
         self.epsilon = epsilon
+        self.buffer_len = buffer_len
 
         if _init_setup_model:
             self._setup_model()
+
+    
+    def _setup_learn( # <-- overwrites base alg method to allow setting buffer size
+        self,
+        total_timesteps: int,
+        eval_env: Optional[GymEnv],
+        callback: MaybeCallback = None,
+        eval_freq: int = 10000,
+        n_eval_episodes: int = 5,
+        log_path: Optional[str] = None,
+        reset_num_timesteps: bool = True,
+        tb_log_name: str = "run",
+    ) -> Tuple[int, BaseCallback]:
+        """
+        Initialize different variables needed for training.
+
+        :param total_timesteps: The total number of samples (env steps) to train on
+        :param eval_env: Environment to use for evaluation.
+        :param callback: Callback(s) called at every step with state of the algorithm.
+        :param eval_freq: How many steps between evaluations
+        :param n_eval_episodes: How many episodes to play per evaluation
+        :param log_path: Path to a folder where the evaluations will be saved
+        :param reset_num_timesteps: Whether to reset or not the ``num_timesteps`` attribute
+        :param tb_log_name: the name of the run for tensorboard log
+        :return:
+        """
+        self.start_time = time.time()
+        if self.ep_info_buffer is None or reset_num_timesteps:
+            # Initialize buffers if they don't exist, or reinitialize if resetting counters
+            self.ep_info_buffer = deque(maxlen=self.buffer_len)
+            self.ep_success_buffer = deque(maxlen=self.buffer_len)
+
+        if self.action_noise is not None:
+            self.action_noise.reset()
+
+        if reset_num_timesteps:
+            self.num_timesteps = 0
+            self._episode_num = 0
+        else:
+            # Make sure training timesteps are ahead of the internal counter
+            total_timesteps += self.num_timesteps
+        self._total_timesteps = total_timesteps
+
+        # Avoid resetting the environment when calling ``.learn()`` consecutive times
+        if reset_num_timesteps or self._last_obs is None:
+            self._last_obs = self.env.reset()
+            self._last_dones = np.zeros((self.env.num_envs,), dtype=bool)
+            # Retrieve unnormalized observation for saving into the buffer
+            if self._vec_normalize_env is not None:
+                self._last_original_obs = self._vec_normalize_env.get_original_obs()
+
+        if eval_env is not None and self.seed is not None:
+            eval_env.seed(self.seed)
+
+        eval_env = self._get_eval_env(eval_env)
+
+        # Configure logger's outputs
+        utils.configure_logger(self.verbose, self.tensorboard_log, tb_log_name, reset_num_timesteps)
+
+        # Create eval callback if needed
+        callback = self._init_callback(callback, eval_env, eval_freq, n_eval_episodes, log_path)
+
+        return total_timesteps, callback
 
     def _setup_model(self) -> None:
         self._setup_lr_schedule()
@@ -167,21 +232,22 @@ class ConnectFourOnPolicyAlgorithm(BaseAlgorithm):
     ) -> "OnPolicyAlgorithm":
         iteration = 0
 
+        
         def do_early_exit_due_to_winning(ep_info_buffer, iteration, force = False):
             # TODO: check frac wins, exit if needed
             if force or ((len(ep_info_buffer) == ep_info_buffer.maxlen) and iteration % 250):
                 # TODO: make this block smarter
                 wins_in_queue = [0 < d['r'] for d in ep_info_buffer]
                 fraction_of_wins = np.mean(wins_in_queue)
-                print("fraction_of_wins after {iteration} iterations: ", fraction_of_wins)
+                print('Queue has length: ', len(ep_info_buffer))
+                print(f"fraction_of_wins after {iteration} iterations: ", fraction_of_wins)
                 if 0.9 < fraction_of_wins:
                     print(f"Exiting due to more than 90% wins in the last 100 games after {iteration} iterations!")
-                    print(f'Agent total updates: {agent_to_improve._n_updates}')
+                    print(f'Agent total updates: {self._n_updates}')
                     return True
                 else:
                     return False
 
-        print(self.env)
         total_timesteps, callback = self._setup_learn(
             total_timesteps, eval_env, callback, eval_freq, n_eval_episodes, eval_log_path, reset_num_timesteps, tb_log_name
         )
@@ -189,7 +255,7 @@ class ConnectFourOnPolicyAlgorithm(BaseAlgorithm):
         callback.on_training_start(locals(), globals())
 
         while self.num_timesteps < total_timesteps:
-
+            
             continue_training = self.collect_rollouts(self.env, callback, self.rollout_buffer, n_rollout_steps=self.n_steps)
 
             if continue_training is False:
@@ -401,6 +467,7 @@ class ConnectFourA2C(ConnectFourOnPolicyAlgorithm):
         seed: Optional[int] = None,
         device: Union[th.device, str] = "auto",
         _init_setup_model: bool = True,
+        buffer_len = 100,
     ):
 
         super(ConnectFourA2C, self).__init__(
@@ -428,6 +495,7 @@ class ConnectFourA2C(ConnectFourOnPolicyAlgorithm):
                 spaces.MultiDiscrete,
                 spaces.MultiBinary,
             ),
+            buffer_len=buffer_len
         )
 
         self.normalize_advantage = normalize_advantage
@@ -530,137 +598,28 @@ class ConnectFourA2C(ConnectFourOnPolicyAlgorithm):
                     action = random.choice(valid_actions)
                     break
 
-            #print('from predict_with_invalid mask, sample count was: ', sample_count)
-            
-            """
-
-            # COMPUTE HIGHEST-PROB VALID ACTION!
-            all_actions = [0,1,2,3,4,5,6] # TODO: Infer from env!
-            action_probabilities = {}
-
-            for potential_action in all_actions:
-                if env.check_action_valid(potential_action):
-                    obs_tensor = th.as_tensor(self._last_obs).to(self.device)
-                    actions, values, log_probs = self.policy.forward(obs_tensor)
-                    #print(log_probs)
-                    action_probabilities[potential_action] = log_probs.cpu().numpy()[0]
-
-
-            print(action_probabilities)
-            if 0.05 > np.random.rand():
-                assert False, 'delib failure!'
-
-            MOST_PROBABLE_VALID_ACTION = max([(k, v) for k, v in action_probabilities.items()], key = lambda x: x[1])[0]
-            #actions = np.array([MOST_PROBABLE_VALID_ACTION])
-        """
         return action
         #return self.policy.predict(observation, state, mask, deterministic)
 
-# init SB agent...
-# train SB-agent on connect4-env
-# log performance.... every N iteration... (e.g. by playing 100 games with random-agent)
-
-if __name__ == '__main__':
-
-    #tf.logging.set_verbosity(tf.logging.ERROR)
-
-
-    #env_ = ConnectFourEnv()
-    #opponent_agent = ConnectFourA2C.load('a2c_agent_50k_vs_random') # 'a2c_agent_50k_vs100kA2C' #ConnectFourA2C.load('a2c_agent_100k')#, env = env_)
-    
-    #import os
-    #print(os.listdir('..'))
-    #assert False
-    """
-    opponent_agent = 'random'
-
-    print(f'Using opponent_agent: {opponent_agent}')
-
-
-    env = ConnectFourEnv(opponent = opponent_agent)
-
-    #obs = env.reset()
-    #print(obs, obs.shape)
-    #print(env.observation_space)
-
-    #from stable_baselines.common.env_checker import check_env
-    #check_env(env)
-
-    #print(env.observation_space)
-
-    agent = ConnectFourA2C(policy = 'MlpPolicy', env=env, verbose=1, tensorboard_log="./test_tensorboard/")
-    #agent2 = ConnectFourA2C(policy = 'MlpPolicy', env=env(opponent = agent1), verbose=1)
-
-
-    total_timesteps = 10000
-    agent.learn(total_timesteps=total_timesteps)
-    agent_name = f'A2Cagent_epsilon{EPSILON}_{int(total_timesteps//1e3)}k_vs_{str(opponent_agent)}'
-    print('SAVING AGENT: ' + agent_name)
-    agent.save(agent_name)
-
-    """
-
-    import os
-    def create_new_agent_generation(experiment_dir):
-
-        def load_agents_from_dir(previous_generation_dir):
-            dirpath = os.path.join(experiment_dir, previous_generation_dir)
-            print(dirpath)
-            files = os.listdir(dirpath)
-            agents = [ConnectFourA2C.load(os.path.join(dirpath, f)) for f in files]
-            return agents
-
-        if experiment_dir is None:
-            previous_agents_list = 'random'
-            experiment_dir = 'experiment_runs' + str(int(time.time()))
-            os.makedirs(experiment_dir) # create fold for agent generations
-            generation_index = 1
-            
-        else:
-            previous_generation_dir = max(os.listdir(experiment_dir))
-            previous_agents_list = load_agents_from_dir(previous_generation_dir)
-            generation_index = len((os.listdir(experiment_dir))) + 1
-
-        agent_generation_dirname = 'generation_' + str(generation_index)
-
-        """ 
-        total_timesteps = 1000
-        for epsilon in [0.05, 0.2, 0.5]:
-
-            # create "environment" with previous agent-group as opponent
-            if previous_agents_list == 'random':
-                env = ConnectFourEnv(opponent = 'random')
-            else:
-                env = ConnectFourEnv(opponent_group = previous_agents_list, epsilon = epsilon)
-            # create new agent with current epislon
-            new_agent = ConnectFourA2C(policy = 'MlpPolicy', env=env, verbose=1)
-            agent_name = f'A2Cagent_epsilon{epsilon}_{int(total_timesteps//1e3)}k_vs_generation_{generation_index-1}'
-            # train the agent
-            print("training agent: " + agent_name)
-            new_agent.learn(total_timesteps=total_timesteps) # TODO: might want to train variable number of steps depending on results?
-            # save the agent
-            print("saving agent: " + agent_name + " to: " + os.path.join(experiment_dir, agent_generation_dirname, agent_name))
-
-            agent_name = f'A2Cagent_epsilon{epsilon}_{int(total_timesteps//1e3)}k_vs_generation_{generation_index-1}'
-            new_agent.save(os.path.join(experiment_dir, agent_generation_dirname, agent_name))
-
-        """
-
-    #previous_agents_list
+#@profile
+def main():
     from copy import deepcopy
     import gc
+    import os
 
     experiment_dirpath = None#'experiment_runs1622994637'
 
-    for generation in range(5):
+    for generation in range(100):
 
         if experiment_dirpath is None:
 
-            experiment_dirpath = 'experiment_runs' + str(int(time.time()))
+            experiment_dirpath = 'experiment_runs_' + str(int(time.time()))
             os.makedirs(experiment_dirpath) # create fold for agent generations
             
-            training_env = ConnectFourEnv(opponent = 'random')
-            agent_to_improve = ConnectFourA2C(policy = 'MlpPolicy', env=training_env, verbose=1)
+            training_env = ConnectFourEnv(opponent = 'random', silent = True)
+            agent_to_improve = ConnectFourA2C(policy = 'MlpPolicy', env=training_env, verbose=1,
+                buffer_len = 1000)
+            print(agent_to_improve.buffer_len)
 
         else:
             # load previous agent
@@ -681,11 +640,19 @@ if __name__ == '__main__':
             #agent_to_improve.env = training_env # update the env to include new opponents
             #agent_to_improve.env.num_envs = 1
 
-        max_total_timesteps = 50000
-        input("Press any key to init training")
+        max_total_timesteps = 2*int(21e6)
+        #input("Press any key to init training")
+        #print(agent_to_improve.ep_info_buffer.maxlen)
+
+        #try:
         agent_to_improve.learn(total_timesteps=max_total_timesteps, log_interval = 100)
-        # reset episode queue results prior to saving
-        new_queue = agent_to_improve.ep_info_buffer = deque(maxlen=agent_to_improve.ep_info_buffer.maxlen)
+        #except KeyboardInterrupt:
+        #    out = input('Keyboard-interupted! Continue to next agent generation [Y]/n?').strip().lower()
+        #    if out == 'n':
+        #        sys.exit(0)
+
+        # reset episode queue results prior to saving (maybe flush queue instead of reinit?)
+        agent_to_improve.ep_info_buffer = deque(maxlen=agent_to_improve.ep_info_buffer.maxlen)
 
         agent_name = f'A2C_agent_n_updates_{agent_to_improve._n_updates}'
         print('saving agent')
@@ -699,3 +666,5 @@ if __name__ == '__main__':
     #print(agent)
     # TODO: randomize starting turn184
     
+if __name__ == '__main__':
+    main()

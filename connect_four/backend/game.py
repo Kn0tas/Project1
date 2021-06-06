@@ -9,7 +9,7 @@ from gym import spaces
 CODE_MARK_MAP = {0: ' ', -1: 'O', 1: 'X'}
 
 GAME_REWARD = 100
-ACTION_REWARD = -1 # penalize per each action to force winning more quickly
+ACTION_REWARD = 0 # -1 # penalize per each action to force winning more quickly
 TIE_REWARD = 0
 
 NUM_ROWS = 6
@@ -74,7 +74,7 @@ class MarkerCounter:
         else:
             return None
 
-def check_non_diagonal_winner(board):
+def check_non_diagonal_winner(board, silent = False):
     marker_counter = MarkerCounter()
 
     for row in board:
@@ -82,7 +82,8 @@ def check_non_diagonal_winner(board):
         for cell in row:
             gameover_flag = marker_counter.count(cell)
             if gameover_flag in [-1, 1]:
-                print(f'The winner is player: {gameover_flag}')
+                if not silent:
+                    print(f'The winner is player: {gameover_flag}')
                 return gameover_flag
             
     for col in board.T:
@@ -90,11 +91,12 @@ def check_non_diagonal_winner(board):
         for cell in col:
             gameover_flag = marker_counter.count(cell)
             if gameover_flag in [-1, 1]:
-                print(f'The winner is player: {gameover_flag}')
+                if not silent:
+                    print(f'The winner is player: {gameover_flag}')
                 return gameover_flag
     return None
         
-def check_diagonal_winner(board):
+def check_diagonal_winner(board, silent = False):
     marker_counter = MarkerCounter()
     
     down_right_startpos = [(2,0), (1,0), (0,0), (0,1), (0,2), (0,3)]    
@@ -105,7 +107,8 @@ def check_diagonal_winner(board):
             cell = board[row_i, col_j]
             gameover_flag = marker_counter.count(cell)
             if gameover_flag in [-1, 1]:
-                print(f'The winner is player: {gameover_flag}')
+                if not silent:
+                    print(f'The winner is player: {gameover_flag}')
                 return gameover_flag
             row_i += 1
             col_j += 1
@@ -117,8 +120,9 @@ def check_diagonal_winner(board):
         while -1 < row_i and col_j < NUM_COLUMNS:
             cell = board[row_i, col_j]
             gameover_flag = marker_counter.count(cell)
-            if gameover_flag in [1, 2]:
-                print(f'The winner is player: {gameover_flag}')
+            if gameover_flag in [-1, 1]:
+                if not silent:
+                    print(f'The winner is player: {gameover_flag}')
                 return gameover_flag
             row_i -= 1
             col_j += 1
@@ -128,7 +132,7 @@ def check_diagonal_winner(board):
 def check_game_draw(board):
     return ~(board == 0).any()
     
-def check_game_status(board):
+def check_game_status(board, silent = False):
     """Return game status by current board status.
     Args:
         board (list): Current board state
@@ -144,9 +148,9 @@ def check_game_status(board):
     if check_game_draw(board):
         return 0 # game draw
         
-    gameover_flag = check_non_diagonal_winner(board)
+    gameover_flag = check_non_diagonal_winner(board, silent)
     if gameover_flag is None:
-        gameover_flag = check_diagonal_winner(board)
+        gameover_flag = check_diagonal_winner(board, silent)
     
     if gameover_flag is not None:
         return gameover_flag # winner is -1 or 1
@@ -158,7 +162,7 @@ def check_game_status(board):
 class ConnectFourEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, alpha=0.02, show_number=False, opponent = None, opponent_group = None, start_mark = 'O', interactive_mode = False):
+    def __init__(self, alpha=0.02, show_number=False, opponent = None, opponent_group = None, start_mark = 'O', interactive_mode = False, silent=False):
         self.action_space = spaces.Discrete(NUM_COLUMNS)
         #self.observation_space = spaces.Discrete(NUM_COLUMNS * NUM_ROWS)
         NUM_CELLS = NUM_COLUMNS * NUM_ROWS
@@ -174,6 +178,7 @@ class ConnectFourEnv(gym.Env):
         self.opponent_group = opponent_group
         assert opponent is None or opponent_group is None
         assert opponent != opponent_group
+        self.silent = silent
 
         #if epsilon is None and opponent != 'random':
         #    EPSILON = 0.2
@@ -197,8 +202,8 @@ class ConnectFourEnv(gym.Env):
         # sample 1 opponent in the group, to be used for the next game
         if self.opponent_group is not None:
             self.opponent = random.choice(self.opponent_group)
-            print('Selecting new opponent agent from group: ' + str(self.opponent))
-            print("Oppent epsilon: ", self.opponent.epsilon)
+            #print('Selecting new opponent agent from group: ' + str(self.opponent))
+            #print("Oppent epsilon: ", self.opponent.epsilon)
 
         return self._get_obs()
 
@@ -257,7 +262,7 @@ class ConnectFourEnv(gym.Env):
         self.board[row_index, loc] = tocode(self.mark)
 
         # check game status
-        status = check_game_status(self.board)
+        status = check_game_status(self.board, self.silent)
         logging.debug("check_game_status board {} mark '{}'"
                       " status {}".format(self.board, self.mark, status))
         if status is not None:
