@@ -113,14 +113,15 @@ def run_game(player1_string, player2_string):
     player1_agent, player1_name = init_agent(player1_string, 'O')
     player2_agent, player2_name = init_agent(player2_string, 'X')
 
-    player1_name = 'bot-a-tron-5000'
-    player2_name = 'bot-a-tron-3000'
+    #player1_name = 'bot-a-tron-5000'
+    #player2_name = 'bot-a-tron-3000'
 
 
     marker_to_agent_map = {
         'O': (player1_agent, player1_name, MARKER_1_COLOR), # yellow
         'X': (player2_agent, player2_name, MARKER_2_COLOR),
     }
+    print(marker_to_agent_map)
     get_agent_by_mark = lambda marker: marker_to_agent_map[marker][0]
     get_player_name_by_mark = lambda marker: marker_to_agent_map[marker][1]
     get_player_color_by_mark = lambda marker: marker_to_agent_map[marker][2]
@@ -137,11 +138,8 @@ def run_game(player1_string, player2_string):
     env = ConnectFourEnv(show_number=False,
                          interactive_mode = True,
                          opponent = 'random')     # random??
-    state = env.reset()
+    state = env.reset(randomized_start=False)
     observation, mark = state
-    print(mark)
-    mark = 'X'
-    print(mark)
     done = False
 
     # init frondtend
