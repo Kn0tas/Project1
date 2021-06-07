@@ -608,7 +608,7 @@ def main():
     import os
 
     experiment_dirpath = None#'experiment_runs1622994637'
-
+    opponent_agent_clones = None
     for generation in range(100):
 
         if experiment_dirpath is None:
@@ -620,7 +620,6 @@ def main():
             agent_to_improve = ConnectFourA2C(policy = 'MlpPolicy', env=training_env, verbose=1,
                 buffer_len = 1000)
             print(agent_to_improve.buffer_len)
-
         else:
             # load previous agent
             #previous_agent_fname = max(os.listdir(experiment_dirpath))
@@ -650,12 +649,14 @@ def main():
         #    out = input('Keyboard-interupted! Continue to next agent generation [Y]/n?').strip().lower()
         #    if out == 'n':
         #        sys.exit(0)
+        del opponent_agent_clones
+        gc.collect()
 
         # reset episode queue results prior to saving (maybe flush queue instead of reinit?)
         agent_to_improve.ep_info_buffer = deque(maxlen=agent_to_improve.ep_info_buffer.maxlen)
 
         agent_name = f'A2C_agent_n_updates_{agent_to_improve._n_updates}'
-        print('saving agent')
+        print('saving agent: '+agent_name)
         agent_to_improve.save(os.path.join(experiment_dirpath, agent_name))
         #del agent_to_improve, training_env
         #gc.collect()

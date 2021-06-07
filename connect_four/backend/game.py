@@ -194,7 +194,7 @@ class ConnectFourEnv(gym.Env):
     def set_start_mark(self, mark):
         self.start_mark = mark
 
-    def reset(self):
+    def reset(self, randomized_start = True):
         self.board = np.zeros((NUM_ROWS,NUM_COLUMNS), dtype=np.int8) # make this a board of 0. (Game Start)
         self.mark = self.start_mark
         self.done = False
@@ -205,6 +205,15 @@ class ConnectFourEnv(gym.Env):
             #print('Selecting new opponent agent from group: ' + str(self.opponent))
             #print("Oppent epsilon: ", self.opponent.epsilon)
 
+        # let oponent start with 50% prob
+        if randomized_start and 0.5 < np.random.rand():
+            #print('Letting oponent start!')
+            _ = self._step_opponent(0)
+        #else:
+            #print('Letting AGENT start!')
+
+        #print('reset obs: ')
+        #print(self.board.flatten().reshape(1,-1))
         return self._get_obs()
 
     def check_action_valid(self, action):
@@ -214,27 +223,42 @@ class ConnectFourEnv(gym.Env):
         assert self.action_space.contains(action)
         return self.board[:, action][0] == 0
 
+    def _step_opponent(self, reward):
+        step_reward = reward
+        if self.opponent == 'random':
+            assert self.opponent == 'random'
+            #action = self.opponent.get_action(obs) # TODO
+
+            all_actions = [0,1,2,3,4,5,6]
+            valid_actions = [a for a in all_actions if self.check_action_valid(a)]
+            action = random.choice(valid_actions)
+        else:
+            action = self.opponent.predict_with_invalid_mask(obs, env = self)
+
+        obs, opponent_reward, done, info = self._step(action)
+
+        reward = step_reward if not done else -1.0*opponent_reward # flip sign if game is done
+
+        #if done:
+            #print('from opponent_step')
+            #print("Game terminated")
+            #print("reward is: ", reward)
+            #print('final obs: ')
+            #print(np.array(self.board).reshape(6, 7))
+
+        return obs, reward, done, info
+
     def step(self, action):
         obs, reward, done, info = self._step(action) # 
         if done:
+            #print('from step')
+            #print("Game terminated")
+            #print("reward is: ", reward)
+            #print('final obs: ')
+            #print(np.array(self.board).reshape(6, 7))
             return obs, reward, done, info
         else: # game not done, also step with opponent
-            step_reward = reward
-
-            if self.opponent == 'random':
-                assert self.opponent == 'random'
-                #action = self.opponent.get_action(obs) # TODO
-
-                all_actions = [0,1,2,3,4,5,6]
-                valid_actions = [a for a in all_actions if self.check_action_valid(a)]
-                action = random.choice(valid_actions)
-            else:
-                action = self.opponent.predict_with_invalid_mask(obs, env = self)
-
-            obs, opponent_reward, done, info = self._step(action)
-
-            reward = step_reward if not done else -1.0*opponent_reward # flip sign if game is done
-            return obs, reward, done, info
+            return self._step_opponent(reward)
 
     def _step(self, action):
         """Step environment by action.
